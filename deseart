@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zombie Survival - 2D FPS</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap');
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #111;
+        }
+
+        canvas {
+            image-rendering: pixelated; 
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .hud {
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            color: #ff3333;
+            text-shadow: 0 0 10px #ff0000, 2px 2px 0 #000;
+            font-size: 2rem;
+            font-weight: bold;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 50, 50, 0.8);
+            box-shadow: 0 0 5px #ff0000;
+        }
+
+        #crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
+        #crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 5rem;
+            color: #ff3333;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px #aa0000;
+            text-align: center;
+            letter-spacing: 5px;
+        }
+
+        p {
+            font-size: 1.2rem;
+            color: #ffcccc;
+            margin-bottom: 30px;
+            text-align: center;
+            max-width: 600px;
+            line-height: 1.6;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: bold;
+            color: #000;
+            background: #ff3333;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 0 15px #ff0000;
+            transition: all 0.2s;
+            border-radius: 5px;
+        }
+
+        button:hover {
+            background: #ffffff;
+            box-shadow: 0 0 25px #ffffff;
+            transform: scale(1.05);
+        }
+
+        #damage-flash {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, transparent 20%, rgba(255, 0, 0, 0.4) 100%);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.1s;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="640" height="400"></canvas>
+    <div id="damage-flash"></div>
+
+    <div id="ui-layer">
+        <div class="hud">
+            <div id="health-display">HEALTH: 100%</div>
+            <div id="score-display">ZOMBIES DEFEATED: 0</div>
+        </div>
+        <div id="crosshair"></div>
+        <div class="hud" style="justify-content: flex-end; flex-direction: column; align-items: flex-end;">
+            <div id="ammo-display">PISTOL AMMO: 30</div>
+            <div id="partner-display" style="font-size: 1.2rem; color: #77aaff; margin-top: 10px; text-shadow: 0 0 5px #0055ff, 2px 2px 0 #000;">PARTNER: PISTOL</div>
+        </div>
+    </div>
+
+    <!-- Menus -->
+    <div id="menu-screen" class="overlay">
+        <h1>DESERT WASTELAND</h1>
+        <p>Survive the open dunes.<br><br>WASD to Move. Mouse to Look. Click to Shoot.<br>1, 2, 3, 4, 5 to Switch Weapons.<br>Press ESC to Pause.</p>
+        <button id="start-btn">START SURVIVAL</button>
+    </div>
+
+    <div id="game-over-screen" class="overlay hidden">
+        <h1>YOU DIED</h1>
+        <p id="final-score">You defeated X zombies.</p>
+        <button id="restart-btn">TRY AGAIN</button>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+const width = canvas.width;
+const height = canvas.height;
+
+const menuScreen = document.getElementById('menu-screen');
+const gameOverScreen = document.getElementById('game-over-screen');
+const startBtn = document.getElementById('start-btn');
+const restartBtn = document.getElementById('restart-btn');
+const healthDisplay = document.getElementById('health-display');
+const scoreDisplay = document.getElementById('score-display');
+const damageFlash = document.getElementById('damage-flash');
+const finalScore = document.getElementById('final-score');
+const partnerDisplay = document.getElementById('partner-display');
+
+// --- GAME CONFIG & STATE ---
+const TEX_WIDTH = 64;
+const TEX_HEIGHT = 64;
+let lastTime = 0;
+let gameState = 'menu';
+let score = 0;
+
+const player = {
+    x: 24.5, y: 24.5, // Start near center
+    dirX: -1, dirY: 0,
+    planeX: 0, planeY: 0.66,
+    moveSpeed: 4.5,
+    rotSpeed: 2.5,
+    hp: 100,
+    maxHp: 100,
+    isShooting: false,
+    shootTimer: 0,
+    bobTimer: 0,
+    pitch: 0, // Vertical viewing angle (for hills)
+    z: 0,     // Vertical height (for hills)
+    currentWeapon: 'pistol',
+    weapons: {
+        pistol: { has: true, ammo: 30, maxAmmo: 150 },
+        shotgun: { has: false, ammo: 0, maxAmmo: 40 },
+        smg: { has: false, ammo: 0, maxAmmo: 200 },
+        sniper: { has: false, ammo: 0, maxAmmo: 30 },
+        minigun: { has: false, ammo: 0, maxAmmo: 500 }
+    }
+};
+
+const keys = { w: false, a: false, s: false, d: false, click: false };
+let mouseMovementX = 0;
+
+let sprites = [];
+let zBuffer = new Array(width);
+
+// --- MAP DEFINITION ---
+const mapWidth = 48;
+const mapHeight = 48;
+const worldMap = Array.from({length: mapHeight}, (_, y) => 
+    Array.from({length: mapWidth}, (_, x) => {
+        if (x === 0 || x === mapWidth - 1 || y === 0 || y === mapHeight - 1) return 1;
+        return 0;
+    })
+);
+
+// Math for terrain hills
+function getElevation(x, y) {
+    return (Math.sin(x * 0.25) + Math.cos(y * 0.25)) * 0.4; 
+}
+
+// --- PROCEDURAL TEXTURES ---
+const textures = [];
+
+function generateTextures() {
+    for(let i=0; i<=7; i++) {
+        const tCanvas = document.createElement('canvas');
+        tCanvas.width = TEX_WIDTH; tCanvas.height = TEX_HEIGHT;
+        const tCtx = tCanvas.getContext('2d');
+        
+        if (i === 1) { // Boundary Walls (Dunes)
+            tCtx.fillStyle = '#e3c188'; 
+            tCtx.fillRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
+            tCtx.fillStyle = '#d4b074';
+            for (let y=0; y<TEX_HEIGHT; y+=2) {
+                tCtx.globalAlpha = Math.random() * 0.5 + 0.5;
+                tCtx.fillRect(0, y, TEX_WIDTH, 2);
+            }
+            tCtx.globalAlpha = 1.0;
+            let grad = tCtx.createLinearGradient(0,0, 0, TEX_HEIGHT);
+            grad.addColorStop(0, 'rgba(0,0,0,0.3)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            tCtx.fillStyle = grad;
+            tCtx.fillRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
+        } else if (i === 6) { // Floor - Sand
+            tCtx.fillStyle = '#e3c188';
+            tCtx.fillRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
+            tCtx.fillStyle = '#d4b074';
+            for(let j=0; j<200; j++) {
+                tCtx.fillRect(Math.random()*TEX_WIDTH, Math.random()*TEX_HEIGHT, 2, 2);
+            }
+        }
+
+        let imgData = tCtx.getImageData(0, 0, TEX_WIDTH, TEX_HEIGHT);
+        textures[i] = {
+            data: imgData.data,
+            data32: new Uint32Array(imgData.data.buffer)
+        };
+    }
+}
+
+// Procedural Sprite Textures
+const robotCanvas = document.createElement('canvas');
+robotCanvas.width = TEX_WIDTH; robotCanvas.height = TEX_HEIGHT;
+const rCtx = robotCanvas.getContext('2d');
+
+function generateRobotTexture() {
+    rCtx.clearRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
+    // Zombie Shadow
+    rCtx.fillStyle = 'rgba(0,0,0,0.5)';
+    rCtx.beginPath(); rCtx.ellipse(32, 60, 20, 4, 0, 0, Math.PI*2); rCtx.fill();
+    // Body
+    rCtx.fillStyle = '#3a5a80'; rCtx.fillRect(20, 24, 24, 30);
+    rCtx.fillStyle = '#443322'; rCtx.fillRect(22, 54, 8, 6); rCtx.fillRect(34, 54, 8, 6);
+    // Head
+    rCtx.fillStyle = '#55aa55'; rCtx.beginPath(); rCtx.arc(32, 16, 12, 0, Math.PI*2); rCtx.fill();
+    // Eyes 
+    rCtx.fillStyle = '#aa0000'; rCtx.fillRect(26, 12, 4, 4); rCtx.fillRect(34, 12, 4, 4);
+    // Arms 
+    rCtx.fillStyle = '#55aa55'; rCtx.fillRect(12, 26, 8, 6); rCtx.fillRect(44, 26, 8, 6);
+    // Blood
+    rCtx.fillStyle = '#660000'; rCtx.fillRect(24, 30, 6, 8); rCtx.fillRect(36, 40, 4, 6);
+}
+
+const attackRobotCanvas = document.createElement('canvas');
+attackRobotCanvas.width = TEX_WIDTH; attackRobotCanvas.height = TEX_HEIGHT;
+const arCtx = attackRobotCanvas.getContext('2d');
+
+function generateAttackRobotTexture() {
+    arCtx.clearRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
+    // Zombie Shadow
+    arCtx.fillStyle = 'rgba(0,0,0,0.5)';
+    arCtx.beginPath(); arCtx.ellipse(32, 60, 20, 4, 0, 0, Math.PI*2); arCtx.fill();
+    // Body
+    arCtx.fillStyle = '#3a5a80'; arCtx.fillRect(20, 24, 24, 30);
+    arCtx.fillStyle = '#443322'; arCtx.fillRect(22, 54, 8, 6); arCtx.fillRect(34, 54, 8, 6);
+    // Head (lunged forward)
+    arCtx.fillStyle = '#55aa55'; arCtx.beginPath(); arCtx.arc(32, 18, 12, 0, Math.PI*2); arCtx.fill();
+    // Eyes (bigger/angry)
+    arCtx.fillStyle = '#ff0000'; arCtx.fillRect(25, 12, 6, 6); arCtx.fillRect(33, 12, 6, 6);
+    // Arms (raised wide for attack)
+    arCtx.fillStyle = '#55aa55'; arCtx.fillRect(4, 20, 16, 8); arCtx.fillRect(44, 20, 16, 8);
+    // Blood
+    arCtx.fillStyle = '#660000'; arCtx.fillRect(24, 30, 6, 8); arCtx.fillRect(36, 40, 4, 6);
+}
+
+// Items Textures
+const itemsCanvas = document.createElement('canvas');
+itemsCanvas.width = TEX_WIDTH * 5; itemsCanvas.height = TEX_HEIGHT; 
+const iCtx = itemsCanvas.getContext('2d');
+
+function generateItemTextures() {
+    iCtx.clearRect(0, 0, TEX_WIDTH*5, TEX_HEIGHT);
+    // 0: Shotgun 
+    iCtx.fillStyle = 'rgba(0,0,0,0.4)'; iCtx.beginPath(); iCtx.ellipse(32, 55, 15, 3, 0, 0, Math.PI*2); iCtx.fill();
+    iCtx.fillStyle = '#5c3a21'; iCtx.fillRect(16, 45, 12, 8);
+    iCtx.fillStyle = '#444'; iCtx.fillRect(28, 47, 24, 4);
+
+    // 1: SMG
+    iCtx.fillStyle = 'rgba(0,0,0,0.4)'; iCtx.beginPath(); iCtx.ellipse(32 + 64, 55, 15, 3, 0, 0, Math.PI*2); iCtx.fill();
+    iCtx.fillStyle = '#222'; iCtx.fillRect(16 + 64, 42, 28, 10);
+    iCtx.fillStyle = '#111'; iCtx.fillRect(26 + 64, 52, 6, 8);
+
+    // 2: Ammo Box
+    iCtx.fillStyle = 'rgba(0,0,0,0.4)'; iCtx.beginPath(); iCtx.ellipse(32 + 128, 55, 15, 3, 0, 0, Math.PI*2); iCtx.fill();
+    iCtx.fillStyle = '#3b5c32'; iCtx.fillRect(20 + 128, 40, 24, 16);
+    iCtx.fillStyle = '#ddcc33'; iCtx.fillRect(29 + 128, 44, 6, 8);
+
+    // 3: Sniper
+    iCtx.fillStyle = 'rgba(0,0,0,0.4)'; iCtx.beginPath(); iCtx.ellipse(32 + 192, 55, 18, 3, 0, 0, Math.PI*2); iCtx.fill();
+    iCtx.fillStyle = '#111'; iCtx.fillRect(10 + 192, 48, 44, 4); 
+    iCtx.fillStyle = '#333'; iCtx.fillRect(20 + 192, 44, 16, 6); 
+    iCtx.fillStyle = '#0a0a0a'; iCtx.fillRect(24 + 192, 40, 8, 4);
+
+    // 4: Minigun
+    iCtx.fillStyle = 'rgba(0,0,0,0.4)'; iCtx.beginPath(); iCtx.ellipse(32 + 256, 55, 16, 4, 0, 0, Math.PI*2); iCtx.fill();
+    iCtx.fillStyle = '#222'; iCtx.fillRect(16 + 256, 42, 32, 12); 
+    iCtx.fillStyle = '#555'; iCtx.fillRect(16 + 256, 44, 32, 2); 
+    iCtx.fillStyle = '#555'; iCtx.fillRect(16 + 256, 48, 32, 2); 
+}
+
+// Scenery Textures
+const envCanvas = document.createElement('canvas');
+envCanvas.width = TEX_WIDTH * 2; envCanvas.height = TEX_HEIGHT;
+const eCtx = envCanvas.getContext('2d');
+
+function generateEnvTextures() {
+    eCtx.clearRect(0, 0, TEX_WIDTH*2, TEX_HEIGHT);
+
+    // 0: Cactus
+    eCtx.fillStyle = 'rgba(0,0,0,0.4)'; eCtx.beginPath(); eCtx.ellipse(32, 60, 14, 3, 0, 0, Math.PI*2); eCtx.fill();
+    eCtx.fillStyle = '#2d5a27';
+    eCtx.fillRect(26, 10, 12, 50);
+    eCtx.fillRect(14, 25, 12, 8);
+    eCtx.fillRect(14, 15, 8, 18);
+    eCtx.fillRect(38, 30, 14, 8);
+    eCtx.fillRect(44, 18, 8, 20);
+    eCtx.fillStyle = '#1e3d1a';
+    for(let i=10; i<60; i+=6) { eCtx.fillRect(30, i, 2, 4); }
+
+    // 1: Bones
+    eCtx.fillStyle = 'rgba(0,0,0,0.3)'; eCtx.beginPath(); eCtx.ellipse(32+64, 55, 16, 4, 0, 0, Math.PI*2); eCtx.fill();
+    eCtx.fillStyle = '#e0e0e0';
+    eCtx.fillRect(20+64, 50, 24, 4);
+    eCtx.fillRect(22+64, 46, 20, 3);
+    eCtx.fillRect(24+64, 42, 16, 3);
+    eCtx.beginPath(); eCtx.arc(32+64, 34, 6, 0, Math.PI*2); eCtx.fill();
+    eCtx.fillStyle = '#111';
+    eCtx.fillRect(29+64, 32, 3, 3); eCtx.fillRect(33+64, 32, 3, 3);
+}
+
+const partnerCanvas = document.createElement('canvas');
+partnerCanvas.width = TEX_WIDTH; partnerCanvas.height = TEX_HEIGHT;
+const pCtx = partnerCanvas.getContext('2d');
+
+function generatePartnerTexture() {
+    pCtx.clearRect(0, 0, TEX_WIDTH, TEX_HEIGHT);
+    // Shadow
+    pCtx.fillStyle = 'rgba(0,0,0,0.5)';
+    pCtx.beginPath(); pCtx.ellipse(32, 60, 20, 4, 0, 0, Math.PI*2); pCtx.fill();
+    // Body (Blue shirt)
+    pCtx.fillStyle = '#2244aa'; pCtx.fillRect(20, 24, 24, 30);
+    // Pants
+    pCtx.fillStyle = '#222222'; pCtx.fillRect(22, 54, 8, 6); pCtx.fillRect(34, 54, 8, 6);
+    // Head
+    pCtx.fillStyle = '#ffccaa'; pCtx.beginPath(); pCtx.arc(32, 16, 12, 0, Math.PI*2); pCtx.fill();
+    // Sunglasses
+    pCtx.fillStyle = '#000000'; pCtx.fillRect(24, 12, 6, 4); pCtx.fillRect(34, 12, 6, 4); pCtx.fillRect(30, 13, 4, 2);
+    // Arms
+    pCtx.fillStyle = '#2244aa'; pCtx.fillRect(12, 26, 8, 12); pCtx.fillRect(44, 26, 8, 12);
+}
+
+generateTextures();
+generateRobotTexture();
+generateAttackRobotTexture();
+generateItemTextures();
+generateEnvTextures();
+generatePartnerTexture();
+
+// --- ENTITY LOGIC ---
+class Entity {
+    constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.type = type;
+        this.attackTimer = 0; // Cooldown/Animation timer
+        
+        if (['cactus', 'bones'].includes(type)) {
+            this.state = 'scenery';
+        } else {
+            this.state = 'alive'; 
+        }
+
+        this.distance = 0;
+        
+        if (type === 'robot') {
+            this.hp = 100;
+            this.speed = 1.8 + Math.random() * 1.5;
+            this.deathTimer = 0;
+        } else if (type === 'partner') {
+            this.currentWeapon = 'pistol';
+            this.shootTimer = 0;
+            this.speed = 3.5;
+        }
+    }
+
+    update(dt) {
+        if (this.state === 'dead' || this.state === 'scenery') {
+            if (this.type === 'robot' && this.state === 'dead') this.deathTimer += dt;
+            return;
+        }
+
+        let dx = player.x - this.x;
+        let dy = player.y - this.y;
+        let dist = Math.hypot(dx, dy);
+
+        if (this.type === 'partner') {
+            // Follow player
+            if (dist > 1.5) {
+                let moveX = (dx / dist) * this.speed * dt;
+                let moveY = (dy / dist) * this.speed * dt;
+                if (!checkObstruction(this.x + moveX, this.y)) this.x += moveX;
+                if (!checkObstruction(this.x, this.y + moveY)) this.y += moveY;
+            }
+
+            // Shooting logic
+            if (this.shootTimer > 0) {
+                this.shootTimer -= dt;
+            } else {
+                let closest = null;
+                let minDist = 8; // Detection range
+                for (let s of sprites) {
+                    if (s.type === 'robot' && s.state === 'alive') {
+                        let d = Math.hypot(s.x - this.x, s.y - this.y);
+                        if (d < minDist) {
+                            minDist = d;
+                            closest = s;
+                        }
+                    }
+                }
+                
+                if (closest) {
+                    let damage = 40;
+                    if (this.currentWeapon === 'pistol') { this.shootTimer = 0.5; damage = 40; }
+                    if (this.currentWeapon === 'shotgun') { this.shootTimer = 1.2; damage = 100; }
+                    if (this.currentWeapon === 'smg') { this.shootTimer = 0.15; damage = 20; }
+                    if (this.currentWeapon === 'sniper') { this.shootTimer = 2.0; damage = 200; }
+                    if (this.currentWeapon === 'minigun') { this.shootTimer = 0.1; damage = 30; }
+                    
+                    closest.takeDamage(damage);
+                    // Knockback applied to zombies shot by partner
+                    let kdx = closest.x - this.x;
+                    let kdy = closest.y - this.y;
+                    let kdist = Math.hypot(kdx, kdy);
+                    if (kdist > 0) {
+                        closest.x += (kdx / kdist) * 0.2;
+                        closest.y += (kdy / kdist) * 0.2;
+                    }
+                }
+            }
+        } else if (this.type === 'robot') {
+            if (this.attackTimer > 0) this.attackTimer -= dt;
+
+            // Move towards player if not in attack range
+            if (dist < 20 && dist > 0.8) {
+                let moveX = (dx / dist) * this.speed * dt;
+                let moveY = (dy / dist) * this.speed * dt;
+
+                if (!checkObstruction(this.x + moveX, this.y)) this.x += moveX;
+                if (!checkObstruction(this.x, this.y + moveY)) this.y += moveY;
+                
+                // Prevent zombie stacking
+                for (let other of sprites) {
+                    if (other !== this && other.state === 'alive' && other.type === 'robot') {
+                        let ox = this.x - other.x;
+                        let oy = this.y - other.y;
+                        let odist = Math.hypot(ox, oy);
+                        if (odist < 0.6 && odist > 0) {
+                            this.x += (ox / odist) * 0.5 * dt;
+                            this.y += (oy / odist) * 0.5 * dt;
+                        }
+                    }
+                }
+            } 
+            // Attack sequence if close enough
+            else if (dist <= 0.8) {
+                if (this.attackTimer <= 0) {
+                    player.hp -= 3; // Reduced damage from 15 to 3
+                    this.attackTimer = 3.0; // Increased cooldown timer to 3.0 seconds
+                    
+                    damageFlash.style.opacity = '1';
+                    setTimeout(() => { damageFlash.style.opacity = '0'; }, 100);
+                    updateHUD();
+                    
+                    if (player.hp <= 0) die();
+                }
+            }
+        } else if (['shotgun', 'smg', 'sniper', 'minigun', 'ammo'].includes(this.type)) {
+            // Pickup logic
+            if (dist < 0.8) {
+                if (this.type === 'shotgun' && !player.weapons.shotgun.has) {
+                    player.weapons.shotgun.has = true;
+                    player.weapons.shotgun.ammo += 15;
+                    player.currentWeapon = 'shotgun';
+                    this.state = 'dead';
+                } else if (this.type === 'smg' && !player.weapons.smg.has) {
+                    player.weapons.smg.has = true;
+                    player.weapons.smg.ammo += 100;
+                    player.currentWeapon = 'smg';
+                    this.state = 'dead';
+                } else if (this.type === 'sniper' && !player.weapons.sniper.has) {
+                    player.weapons.sniper.has = true;
+                    player.weapons.sniper.ammo += 10;
+                    player.currentWeapon = 'sniper';
+                    this.state = 'dead';
+                } else if (this.type === 'minigun' && !player.weapons.minigun.has) {
+                    player.weapons.minigun.has = true;
+                    player.weapons.minigun.ammo += 200;
+                    player.currentWeapon = 'minigun';
+                    this.state = 'dead';
+                } else if (this.type === 'ammo') {
+                    player.weapons.pistol.ammo = Math.min(player.weapons.pistol.maxAmmo, player.weapons.pistol.ammo + 20);
+                    if(player.weapons.shotgun.has) player.weapons.shotgun.ammo = Math.min(player.weapons.shotgun.maxAmmo, player.weapons.shotgun.ammo + 10);
+                    if(player.weapons.smg.has) player.weapons.smg.ammo = Math.min(player.weapons.smg.maxAmmo, player.weapons.smg.ammo + 40);
+                    if(player.weapons.sniper.has) player.weapons.sniper.ammo = Math.min(player.weapons.sniper.maxAmmo, player.weapons.sniper.ammo + 5);
+                    if(player.weapons.minigun.has) player.weapons.minigun.ammo = Math.min(player.weapons.minigun.maxAmmo, player.weapons.minigun.ammo + 100);
+                    this.state = 'dead';
+                }
+                updateHUD();
+            }
+        }
+    }
+
+    takeDamage(amount) {
+        if (this.type !== 'robot' || this.state === 'dead') return;
+        this.hp -= amount;
+        if (this.hp <= 0) {
+            this.state = 'dead';
+            score++;
+            if (Math.random() > 0.6) {
+                sprites.push(new Entity(this.x, this.y, 'ammo'));
+            }
+            updateHUD();
+        }
+    }
+}
+
+function spawnEntities(count, type) {
+    for (let i = 0; i < count; i++) {
+        let x, y;
+        do {
+            x = Math.floor(Math.random() * (mapWidth - 2)) + 1.5;
+            y = Math.floor(Math.random() * (mapHeight - 2)) + 1.5;
+        } while (checkObstruction(x, y) || Math.hypot(player.x - x, player.y - y) < 5);
+        sprites.push(new Entity(x, y, type));
+    }
+}
+
+function checkObstruction(x, y) {
+    let cx = Math.floor(x);
+    let cy = Math.floor(y);
+    if (worldMap[cx] && worldMap[cx][cy] !== 0) return true; 
+    for (let s of sprites) {
+        if (s.type === 'cactus' && Math.hypot(s.x - x, s.y - y) < 0.4) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// --- INPUT HANDLING ---
+document.addEventListener('keydown', (e) => {
+    if (gameState !== 'playing') return;
+    const key = e.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) keys[key] = true;
+    
+    let oldWeapon = player.currentWeapon;
+    let switched = false;
+
+    if (key === '1' && player.weapons.pistol.has && player.currentWeapon !== 'pistol') { player.currentWeapon = 'pistol'; switched = true; }
+    if (key === '2' && player.weapons.shotgun.has && player.currentWeapon !== 'shotgun') { player.currentWeapon = 'shotgun'; switched = true; }
+    if (key === '3' && player.weapons.smg.has && player.currentWeapon !== 'smg') { player.currentWeapon = 'smg'; switched = true; }
+    if (key === '4' && player.weapons.sniper.has && player.currentWeapon !== 'sniper') { player.currentWeapon = 'sniper'; switched = true; }
+    if (key === '5' && player.weapons.minigun.has && player.currentWeapon !== 'minigun') { player.currentWeapon = 'minigun'; switched = true; }
+    
+    // Pass the old weapon to the partner
+    if (switched) {
+        let partnerEntity = sprites.find(s => s.type === 'partner');
+        if (partnerEntity) {
+            partnerEntity.currentWeapon = oldWeapon;
+        }
+    }
+
+    updateHUD();
+});
+
+document.addEventListener('keyup', (e) => {
+    const key = e.key.toLowerCase();
+    if (keys.hasOwnProperty(key)) keys[key] = false;
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (gameState === 'playing' && document.pointerLockElement === document.body) {
+        mouseMovementX = e.movementX;
+    }
+});
+
+document.addEventListener('mousedown', (e) => {
+    if (gameState === 'playing' && e.button === 0 && document.pointerLockElement === document.body) {
+        keys.click = true;
+    }
+});
+
+document.addEventListener('mouseup', (e) => {
+    if (e.button === 0) keys.click = false;
+});
+
+function requestLock() {
+    document.body.requestPointerLock = document.body.requestPointerLock || document.body.mozRequestPointerLock;
+    document.body.requestPointerLock();
+}
+
+document.addEventListener('pointerlockchange', () => {
+    if (document.pointerLockElement === document.body) {
+        if (gameState === 'menu') startGame();
+    } else {
+        if (gameState === 'playing') {
+            gameState = 'menu';
+            keys.click = false;
+            menuScreen.classList.remove('hidden');
+            menuScreen.querySelector('h1').innerText = "GAME PAUSED";
+            menuScreen.querySelector('button').innerText = "RESUME";
+        }
+    }
+});
+
+startBtn.addEventListener('click', requestLock);
+restartBtn.addEventListener('click', () => {
+    resetGame();
+    requestLock();
+});
+
+// --- CORE GAME MECHANICS ---
+
+function startGame() {
+    gameState = 'playing';
+    menuScreen.classList.add('hidden');
+    gameOverScreen.classList.add('hidden');
+    lastTime = performance.now();
+    if (sprites.length === 0) {
+        sprites.push(new Entity(player.x - 1, player.y - 1, 'partner'));
+        spawnEntities(60, 'cactus');
+        spawnEntities(40, 'bones');
+        spawnEntities(5, 'shotgun');
+        spawnEntities(5, 'smg');
+        spawnEntities(3, 'sniper');
+        spawnEntities(2, 'minigun');
+        spawnEntities(15, 'ammo');
+        spawnEntities(20, 'robot');
+    }
+    updateHUD();
+    requestAnimationFrame(gameLoop);
+}
+
+function resetGame() {
+    player.x = 24.5; player.y = 24.5;
+    player.dirX = -1; player.dirY = 0;
+    player.planeX = 0; player.planeY = 0.66;
+    player.hp = 100;
+    player.weapons.pistol.ammo = 30;
+    player.weapons.shotgun.has = false; player.weapons.shotgun.ammo = 0;
+    player.weapons.smg.has = false; player.weapons.smg.ammo = 0;
+    player.weapons.sniper.has = false; player.weapons.sniper.ammo = 0;
+    player.weapons.minigun.has = false; player.weapons.minigun.ammo = 0;
+    player.currentWeapon = 'pistol';
+    player.pitch = 0;
+    player.z = 0;
+    
+    score = 0;
+    sprites = [];
+    
+    sprites.push(new Entity(player.x - 1, player.y - 1, 'partner'));
+    spawnEntities(60, 'cactus');
+    spawnEntities(40, 'bones');
+    spawnEntities(5, 'shotgun');
+    spawnEntities(5, 'smg');
+    spawnEntities(3, 'sniper');
+    spawnEntities(2, 'minigun');
+    spawnEntities(15, 'ammo');
+    spawnEntities(20, 'robot');
+    
+    updateHUD();
+}
+
+function die() {
+    gameState = 'dead';
+    document.exitPointerLock();
+    gameOverScreen.classList.remove('hidden');
+    finalScore.innerText = `You defeated ${score} zombies.`;
+}
+
+function updateHUD() {
+    healthDisplay.innerText = `HEALTH: ${Math.max(0, Math.floor(player.hp))}%`;
+    scoreDisplay.innerText = `ZOMBIES DEFEATED: ${score}`;
+    
+    const wName = player.currentWeapon.toUpperCase();
+    const wAmmo = player.weapons[player.currentWeapon].ammo;
+    document.getElementById('ammo-display').innerText = `${wName} AMMO: ${wAmmo}`;
+    
+    let partnerEntity = sprites.find(s => s.type === 'partner');
+    if (partnerEntity) {
+        partnerDisplay.innerText = `PARTNER: ${partnerEntity.currentWeapon.toUpperCase()}`;
+    }
+
+    if (player.hp <= 30) {
+        healthDisplay.style.color = '#ff0000';
+        healthDisplay.style.animation = 'pulse 1s infinite';
+    } else {
+        healthDisplay.style.color = '#ff3333';
+        healthDisplay.style.animation = 'none';
+    }
+}
+
+function shoot() {
+    if (player.shootTimer > 0) return; 
+    let activeWeapon = player.weapons[player.currentWeapon];
+    
+    if (activeWeapon.ammo <= 0) return; 
+    activeWeapon.ammo--;
+    updateHUD();
+    
+    player.isShooting = true;
+    
+    let damage = 40;
+    let hitWidth = 0.3;
+    let maxHits = 1;
+
+    if (player.currentWeapon === 'pistol') {
+        player.shootTimer = 0.35;
+        damage = 40;  
+        maxHits = 1;  
+        hitWidth = 0.3;
+    } else if (player.currentWeapon === 'shotgun') {
+        player.shootTimer = 0.8;
+        damage = 50;  
+        maxHits = 3;  
+        hitWidth = 1.2; 
+    } else if (player.currentWeapon === 'smg') {
+        player.shootTimer = 0.1; 
+        damage = 100; 
+        maxHits = 2;  
+        hitWidth = 0.4;
+    } else if (player.currentWeapon === 'sniper') {
+        player.shootTimer = 1.5;
+        damage = 250;
+        maxHits = 5;
+        hitWidth = 0.2;
+    } else if (player.currentWeapon === 'minigun') {
+        player.shootTimer = 0.05;
+        damage = 35;
+        maxHits = 1;
+        hitWidth = 0.5;
+    }
+
+    let hitRobots = [];
+
+    for (let r of sprites) {
+        if (r.type !== 'robot' || r.state === 'dead') continue;
+        
+        let spriteX = r.x - player.x;
+        let spriteY = r.y - player.y;
+
+        let invDet = 1.0 / (player.planeX * player.dirY - player.dirX * player.planeY);
+        let transformX = invDet * (player.dirY * spriteX - player.dirX * spriteY);
+        let transformY = invDet * (-player.planeY * spriteX + player.planeX * spriteY);
+
+        if (transformY > 0) {
+            let spriteScreenX = Math.floor((width / 2) * (1 + transformX / transformY));
+            let spriteWidth = Math.abs(Math.floor(height / transformY));
+            
+            if (spriteScreenX > width/2 - spriteWidth * hitWidth && spriteScreenX < width/2 + spriteWidth * hitWidth) {
+                if (transformY < zBuffer[width/2]) { 
+                    hitRobots.push({ robot: r, dist: transformY });
+                }
+            }
+        }
+    }
+
+    hitRobots.sort((a, b) => a.dist - b.dist);
+
+    let hitsApplied = 0;
+    for (let hit of hitRobots) {
+        if (hitsApplied >= maxHits) break;
+        
+        hit.robot.takeDamage(damage);
+        hit.robot.x += player.dirX * 0.2; // knockback
+        hit.robot.y += player.dirY * 0.2;
+        
+        hitsApplied++;
+    }
+}
+
+// --- RENDERING ENGINE ---
+
+const screenData = ctx.createImageData(width, height);
+const buffer = new Uint32Array(screenData.data.buffer);
+
+function clearBuffer() {
+    for(let i=0; i<buffer.length; i++) buffer[i] = 0;
+}
+
+function renderFloorAndSky() {
+    let pitch = Math.floor(player.pitch);
+    let posZ = 0.5 * height + player.z;
+    
+    let horizonY = Math.floor(height / 2 + pitch);
+    if (horizonY < 0) horizonY = 0;
+    if (horizonY > height) horizonY = height;
+
+    const floorTex = textures[6].data32;
+
+    for (let y = 0; y < horizonY; y++) {
+        let skyRatio = y / horizonY;
+        let r = Math.floor(79 - 79 * skyRatio);
+        let g = Math.floor(172 + 70 * skyRatio);
+        let b = 254;
+        let color = (255 << 24) | (b << 16) | (g << 8) | r;
+        
+        for (let x = 0; x < width; x++) {
+            buffer[y * width + x] = color;
+        }
+    }
+
+    let rayDirX0 = player.dirX - player.planeX;
+    let rayDirY0 = player.dirY - player.planeY;
+    let rayDirX1 = player.dirX + player.planeX;
+    let rayDirY1 = player.dirY + player.planeY;
+
+    for (let y = horizonY; y < height; y++) {
+        let p = y - height / 2 - pitch;
+        if (p === 0) p = 1; 
+
+        let rowDistance = posZ / p;
+        let floorStepX = rowDistance * (rayDirX1 - rayDirX0) / width;
+        let floorStepY = rowDistance * (rayDirY1 - rayDirY0) / width;
+
+        let floorX = player.x + rowDistance * rayDirX0;
+        let floorY = player.y + rowDistance * rayDirY0;
+
+        let fog = Math.max(0, 1 - (rowDistance / 24));
+
+        for (let x = 0; x < width; x++) {
+            let cellX = Math.floor(floorX);
+            let cellY = Math.floor(floorY);
+
+            let tx = Math.floor(TEX_WIDTH * (floorX - cellX)) & (TEX_WIDTH - 1);
+            let ty = Math.floor(TEX_HEIGHT * (floorY - cellY)) & (TEX_HEIGHT - 1);
+
+            floorX += floorStepX;
+            floorY += floorStepY;
+
+            let color = floorTex[TEX_HEIGHT * ty + tx];
+            let fr = (color & 0xff) * fog;
+            let fg = ((color >> 8) & 0xff) * fog;
+            let fb = ((color >> 16) & 0xff) * fog;
+
+            buffer[y * width + x] = (255 << 24) | (fb << 16) | (fg << 8) | fr;
+        }
+    }
+}
+
+function renderWalls() {
+    let pitch = Math.floor(player.pitch);
+
+    for (let x = 0; x < width; x++) {
+        let cameraX = 2 * x / width - 1;
+        let rayDirX = player.dirX + player.planeX * cameraX;
+        let rayDirY = player.dirY + player.planeY * cameraX;
+
+        let mapX = Math.floor(player.x);
+        let mapY = Math.floor(player.y);
+
+        let sideDistX, sideDistY;
+        let deltaDistX = (rayDirX === 0) ? 1e30 : Math.abs(1 / rayDirX);
+        let deltaDistY = (rayDirY === 0) ? 1e30 : Math.abs(1 / rayDirY);
+        let perpWallDist;
+
+        let stepX, stepY;
+        let hit = 0;
+        let side; 
+
+        if (rayDirX < 0) {
+            stepX = -1;
+            sideDistX = (player.x - mapX) * deltaDistX;
+        } else {
+            stepX = 1;
+            sideDistX = (mapX + 1.0 - player.x) * deltaDistX;
+        }
+        if (rayDirY < 0) {
+            stepY = -1;
+            sideDistY = (player.y - mapY) * deltaDistY;
+        } else {
+            stepY = 1;
+            sideDistY = (mapY + 1.0 - player.y) * deltaDistY;
+        }
+
+        while (hit === 0) {
+            if (sideDistX < sideDistY) {
+                sideDistX += deltaDistX;
+                mapX += stepX;
+                side = 0;
+            } else {
+                sideDistY += deltaDistY;
+                mapY += stepY;
+                side = 1;
+            }
+            if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) {
+                hit = 1;
+                perpWallDist = 100;
+                break;
+            }
+            if (worldMap[mapX][mapY] > 0) hit = 1;
+        }
+
+        if (side === 0) perpWallDist = (sideDistX - deltaDistX);
+        else perpWallDist = (sideDistY - deltaDistY);
+
+        zBuffer[x] = perpWallDist; 
+
+        let lineHeight = Math.floor(height / perpWallDist);
+        let vMoveScreen = Math.floor(pitch + player.z / perpWallDist);
+
+        let drawStart = -lineHeight / 2 + height / 2 + vMoveScreen;
+        let drawEnd = lineHeight / 2 + height / 2 + vMoveScreen;
+        
+        let startY = Math.max(0, Math.floor(drawStart));
+        let endY = Math.min(height - 1, Math.floor(drawEnd));
+
+        let texNum = worldMap[mapX] && worldMap[mapX][mapY] > 0 ? worldMap[mapX][mapY] : 1;
+        
+        let wallX;
+        if (side === 0) wallX = player.y + perpWallDist * rayDirY;
+        else wallX = player.x + perpWallDist * rayDirX;
+        wallX -= Math.floor(wallX);
+
+        let texX = Math.floor(wallX * TEX_WIDTH);
+        if (side === 0 && rayDirX > 0) texX = TEX_WIDTH - texX - 1;
+        if (side === 1 && rayDirY < 0) texX = TEX_WIDTH - texX - 1;
+
+        const texData32 = textures[texNum] ? textures[texNum].data32 : textures[1].data32;
+
+        let step = 1.0 * TEX_HEIGHT / lineHeight;
+        let texPos = (startY - vMoveScreen - height / 2 + lineHeight / 2) * step;
+
+        let fog = Math.max(0, 1 - (perpWallDist / 20)); 
+        if (side === 1) fog *= 0.7; 
+
+        for (let y = startY; y <= endY; y++) {
+            let texY = Math.floor(texPos) & (TEX_HEIGHT - 1);
+            texPos += step;
+            
+            let color = texData32[TEX_HEIGHT * texY + texX];
+            
+            let r = (color & 0xff) * fog;
+            let g = ((color >> 8) & 0xff) * fog;
+            let b = ((color >> 16) & 0xff) * fog;
+            
+            buffer[y * width + x] = (255 << 24) | (b << 16) | (g << 8) | r;
+        }
+    }
+    ctx.putImageData(screenData, 0, 0);
+}
+
+function renderSprites() {
+    for(let i = 0; i < sprites.length; i++) {
+        sprites[i].distance = ((player.x - sprites[i].x) * (player.x - sprites[i].x) + (player.y - sprites[i].y) * (player.y - sprites[i].y));
+    }
+    sprites.sort((a, b) => b.distance - a.distance);
+
+    for (let i = 0; i < sprites.length; i++) {
+        let sprite = sprites[i];
+        
+        let spriteX = sprite.x - player.x;
+        let spriteY = sprite.y - player.y;
+
+        let invDet = 1.0 / (player.planeX * player.dirY - player.dirX * player.planeY);
+        let transformX = invDet * (player.dirY * spriteX - player.dirX * spriteY);
+        let transformY = invDet * (-player.planeY * spriteX + player.planeX * spriteY);
+
+        if (transformY > 0) { 
+            let spriteScreenX = Math.floor((width / 2) * (1 + transformX / transformY));
+            let spriteHeight = Math.abs(Math.floor(height / transformY));
+            
+            let spriteZ = getElevation(sprite.x, sprite.y) * 100;
+            let vMoveScreen = Math.floor(player.pitch + (player.z - spriteZ) / transformY);
+
+            let drawStartY = -spriteHeight / 2 + height / 2 + vMoveScreen;
+            let drawEndY = spriteHeight / 2 + height / 2 + vMoveScreen;
+            
+            if (sprite.state === 'dead' && sprite.type === 'robot') {
+                let fall = Math.min(1.0, sprite.deathTimer * 3);
+                drawStartY += spriteHeight * fall * 0.8; 
+                drawEndY += spriteHeight * fall * 0.8;
+                spriteHeight *= (1 - fall*0.7); 
+            } else if (['ammo', 'shotgun', 'smg', 'sniper', 'minigun', 'bones'].includes(sprite.type)) {
+                drawStartY += spriteHeight * 0.4;
+                drawEndY += spriteHeight * 0.4;
+            }
+
+            let spriteWidth = Math.abs(Math.floor(height / transformY));
+            let drawStartX = -spriteWidth / 2 + spriteScreenX;
+            let drawEndX = spriteWidth / 2 + spriteScreenX;
+
+            if (sprite.state === 'alive' && sprite.type === 'robot') {
+                let bob = Math.sin(performance.now() * 0.005 + sprite.distance) * (spriteHeight * 0.08);
+                drawStartY += bob;
+                drawEndY += bob;
+            }
+
+            if (drawStartX < width && drawEndX > 0) {
+                let srcCanvas = robotCanvas;
+                let srcOffsetX = 0;
+                
+                if (sprite.type === 'partner') { 
+                    srcCanvas = partnerCanvas; srcOffsetX = 0; 
+                } else if (sprite.type === 'robot' && sprite.state === 'alive') {
+                    // Show attack animation for the first 0.5s of the 3.0s cooldown
+                    if (sprite.attackTimer > 2.5) {
+                        srcCanvas = attackRobotCanvas;
+                    }
+                } else if (sprite.type === 'shotgun') { srcCanvas = itemsCanvas; srcOffsetX = 0; }
+                else if (sprite.type === 'smg') { srcCanvas = itemsCanvas; srcOffsetX = TEX_WIDTH; }
+                else if (sprite.type === 'ammo') { srcCanvas = itemsCanvas; srcOffsetX = TEX_WIDTH * 2; }
+                else if (sprite.type === 'sniper') { srcCanvas = itemsCanvas; srcOffsetX = TEX_WIDTH * 3; }
+                else if (sprite.type === 'minigun') { srcCanvas = itemsCanvas; srcOffsetX = TEX_WIDTH * 4; }
+                else if (sprite.type === 'cactus') { srcCanvas = envCanvas; srcOffsetX = 0; }
+                else if (sprite.type === 'bones') { srcCanvas = envCanvas; srcOffsetX = TEX_WIDTH; }
+
+                for (let stripe = Math.max(0, Math.floor(drawStartX)); stripe < Math.min(width, Math.floor(drawEndX)); stripe++) {
+                    if (transformY < zBuffer[stripe]) {
+                        let texX = Math.floor(256 * (stripe - (-spriteWidth / 2 + spriteScreenX)) * TEX_WIDTH / spriteWidth) / 256;
+                        ctx.globalAlpha = Math.max(0.1, 1 - (transformY / 18));
+                        
+                        ctx.drawImage(
+                            srcCanvas, 
+                            srcOffsetX + Math.floor(texX), 0, 1, TEX_HEIGHT, 
+                            stripe, drawStartY, 1, drawEndY - drawStartY
+                        );
+                    }
+                }
+                ctx.globalAlpha = 1.0;
+            }
+        }
+    }
+}
+
+function renderWeapon() {
+    let bobX = 0;
+    let bobY = 0;
+    if (keys.w || keys.a || keys.s || keys.d) {
+        player.bobTimer += 0.015;
+        bobX = Math.cos(player.bobTimer) * 15;
+        bobY = Math.abs(Math.sin(player.bobTimer)) * 15;
+    } else {
+        player.bobTimer = 0;
+    }
+
+    let gunX = width / 2 + bobX;
+    let gunY = height - 120 + bobY;
+    let sway = player.shootTimer > 0 ? 25 : 0;
+
+    if (player.currentWeapon === 'pistol') {
+        gunX -= 15; gunY += sway;
+        ctx.fillStyle = '#222'; ctx.fillRect(gunX - 5, gunY, 40, 120);
+        ctx.fillStyle = '#444'; ctx.fillRect(gunX, gunY, 30, 120);
+        ctx.fillStyle = '#111'; ctx.fillRect(gunX + 12, gunY - 5, 6, 10);
+    } 
+    else if (player.currentWeapon === 'shotgun') {
+        gunX -= 25; gunY += (sway * 1.5);
+        ctx.fillStyle = '#422814'; ctx.fillRect(gunX - 10, gunY + 40, 70, 100); 
+        ctx.fillStyle = '#333'; ctx.fillRect(gunX, gunY - 20, 50, 140); 
+        ctx.fillStyle = '#111'; ctx.fillRect(gunX + 10, gunY - 20, 30, 140); 
+        ctx.fillStyle = '#555'; ctx.fillRect(gunX + 22, gunY - 25, 6, 10); 
+    } 
+    else if (player.currentWeapon === 'smg') {
+        gunX -= 20; gunY += (sway * 0.5); 
+        ctx.fillStyle = '#1a1a1a'; ctx.fillRect(gunX - 15, gunY + 20, 70, 100); 
+        ctx.fillStyle = '#2a2a2a'; ctx.fillRect(gunX, gunY, 40, 120); 
+        ctx.fillStyle = '#0f0f0f'; ctx.fillRect(gunX + 5, gunY + 40, 30, 80); 
+        ctx.fillStyle = '#444'; ctx.fillRect(gunX + 16, gunY - 5, 8, 15); 
+    }
+    else if (player.currentWeapon === 'sniper') {
+        gunX -= 10; gunY += (sway * 2);
+        ctx.fillStyle = '#111'; ctx.fillRect(gunX - 5, gunY, 20, 160); 
+        ctx.fillStyle = '#222'; ctx.fillRect(gunX - 8, gunY + 40, 26, 80); 
+        ctx.fillStyle = '#050505'; ctx.fillRect(gunX - 2, gunY - 20, 14, 40); 
+    }
+    else if (player.currentWeapon === 'minigun') {
+        gunX -= 30; gunY += (sway * 0.3);
+        ctx.fillStyle = '#222'; ctx.fillRect(gunX - 20, gunY + 30, 90, 100); 
+        ctx.fillStyle = '#444'; ctx.fillRect(gunX - 10, gunY, 20, 150); 
+        ctx.fillStyle = '#333'; ctx.fillRect(gunX + 15, gunY + 10, 20, 150); 
+        ctx.fillStyle = '#444'; ctx.fillRect(gunX + 40, gunY, 20, 150); 
+    }
+
+    let minFlashTimer = 0.02;
+    if (player.currentWeapon === 'shotgun') minFlashTimer = 0.6;
+    if (player.currentWeapon === 'sniper') minFlashTimer = 1.3;
+    if (player.currentWeapon === 'smg') minFlashTimer = 0.05;
+
+    if (player.shootTimer > minFlashTimer) {
+        ctx.fillStyle = 'rgba(255, 180, 0, 0.8)';
+        ctx.beginPath();
+        let flashRad = 40;
+        if (player.currentWeapon === 'shotgun') flashRad = 60;
+        if (player.currentWeapon === 'sniper') flashRad = 70;
+        if (player.currentWeapon === 'minigun') flashRad = 35;
+        if (player.currentWeapon === 'smg') flashRad = 25;
+        
+        ctx.arc(width/2 + bobX, gunY - (player.currentWeapon === 'shotgun' ? 30 : 20), flashRad + Math.random()*20, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255, 150, 0, 0.15)';
+        ctx.fillRect(0,0,width,height);
+    }
+}
+
+// --- MAIN LOOP ---
+
+function gameLoop(time) {
+    if (gameState !== 'playing') return;
+    
+    let dt = (time - lastTime) / 1000;
+    if (dt > 0.1) dt = 0.1; 
+    lastTime = time;
+
+    updatePlayer(dt);
+    
+    if (sprites.filter(s => s.type === 'robot' && s.state === 'alive').length < 8) {
+        spawnEntities(10, 'robot'); 
+    }
+
+    for (let i=sprites.length-1; i>=0; i--) {
+        sprites[i].update(dt);
+        if (sprites[i].state === 'dead') {
+            if (sprites[i].type !== 'robot' || sprites[i].deathTimer > 3) {
+                sprites.splice(i, 1); 
+            }
+        }
+    }
+
+    clearBuffer(); 
+    renderFloorAndSky();
+    renderWalls();          
+    renderSprites();         
+    renderWeapon();
+
+    requestAnimationFrame(gameLoop);
+}
+
+function updatePlayer(dt) {
+    if (mouseMovementX !== 0) {
+        let rot = -mouseMovementX * 0.002;
+        let oldDirX = player.dirX;
+        player.dirX = player.dirX * Math.cos(rot) - player.dirY * Math.sin(rot);
+        player.dirY = oldDirX * Math.sin(rot) + player.dirY * Math.cos(rot);
+        let oldPlaneX = player.planeX;
+        player.planeX = player.planeX * Math.cos(rot) - player.planeY * Math.sin(rot);
+        player.planeY = oldPlaneX * Math.sin(rot) + player.planeY * Math.cos(rot);
+        mouseMovementX = 0;
+    }
+
+    let moveStep = player.moveSpeed * dt;
+    let newX = player.x;
+    let newY = player.y;
+
+    if (keys.w) {
+        newX += player.dirX * moveStep;
+        newY += player.dirY * moveStep;
+    }
+    if (keys.s) {
+        newX -= player.dirX * moveStep;
+        newY -= player.dirY * moveStep;
+    }
+    if (keys.d) { 
+        newX += player.planeX * moveStep;
+        newY += player.planeY * moveStep;
+    }
+    if (keys.a) { 
+        newX -= player.planeX * moveStep;
+        newY -= player.planeY * moveStep;
+    }
+
+    if (!checkObstruction(newX, player.y)) player.x = newX;
+    if (!checkObstruction(player.x, newY)) player.y = newY;
+
+    let currentElev = getElevation(player.x, player.y);
+    let forwardElev = getElevation(player.x + player.dirX * 0.5, player.y + player.dirY * 0.5);
+    
+    let targetPitch = (forwardElev - currentElev) * 200; 
+    player.pitch += (targetPitch - player.pitch) * 10 * dt; 
+    player.z = currentElev * 80; 
+
+    if (player.shootTimer > 0) {
+        player.shootTimer -= dt;
+    } else {
+        player.isShooting = false;
+        if (keys.click) {
+            shoot();
+        }
+    }
+}
+
+clearBuffer();
+renderFloorAndSky();
+renderWalls();
+
+</script>
+</body>
+</html>
